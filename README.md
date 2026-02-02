@@ -16,7 +16,7 @@ Requires Python 3.10+ and [uv](https://github.com/astral-sh/uv).
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/guangdong-energy-model.git
+git clone https://github.com/CandlelightDoener/guangdong-energy-model.git
 cd guangdong-energy-model
 
 # Install dependencies
