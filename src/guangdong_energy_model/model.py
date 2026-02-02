@@ -171,19 +171,16 @@ def _get_availability_profile(gen_type: str, n_snapshots: int) -> np.ndarray:
 
 def _add_loads(network: pypsa.Network, multi_region: bool) -> None:
     """Add electricity loads by sector."""
+    n_snapshots = len(network.snapshots)
     total_annual_twh = sum(data.ELECTRICITY_DEMAND_TWH.values())
-    # Convert annual TWh to hourly MW (assuming 8760 hours)
-    avg_hourly_mw = total_annual_twh * 1e6 / 8760
 
-    # Create load profile
-    load_profile = np.array(data.LOAD_PROFILE_SUMMER)
+    # Get hourly load profile (real data if available)
+    hourly_demand = data.get_hourly_demand_profile(n_snapshots)
 
     if multi_region:
         for region, info in data.REGIONS.items():
             bus = f"{region}_elec"
-            regional_load = avg_hourly_mw * info["load_share"]
-            n_snapshots = len(network.snapshots)
-            p_set = regional_load * load_profile[:n_snapshots]
+            p_set = hourly_demand[:n_snapshots] * info["load_share"]
 
             network.add(
                 "Load",
@@ -192,9 +189,6 @@ def _add_loads(network: pypsa.Network, multi_region: bool) -> None:
                 p_set=p_set,
             )
     else:
-        n_snapshots = len(network.snapshots)
-        p_set = avg_hourly_mw * load_profile[:n_snapshots]
-
         # Add sectoral loads
         for sector, twh in data.ELECTRICITY_DEMAND_TWH.items():
             sector_share = twh / total_annual_twh
@@ -202,7 +196,7 @@ def _add_loads(network: pypsa.Network, multi_region: bool) -> None:
                 "Load",
                 f"{sector}_load",
                 bus="guangdong_elec",
-                p_set=p_set * sector_share,
+                p_set=hourly_demand[:n_snapshots] * sector_share,
             )
 
 

@@ -8,7 +8,7 @@ Or: python -m guangdong_energy_model.main
 import argparse
 from pathlib import Path
 
-from . import model, visualize
+from . import model, visualize, data
 
 
 def main():
@@ -60,6 +60,13 @@ def main():
     print("=" * 60)
     print("Guangdong Province Energy System Model")
     print("=" * 60)
+
+    # Show data source
+    if data.is_using_real_data():
+        print("\nData source: PyPSA-China-PIK (real data)")
+    else:
+        print("\nData source: Placeholder data")
+        print("  Run 'git submodule update --init' for real data")
 
     # Create network
     print("\nCreating network...")
