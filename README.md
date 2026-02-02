@@ -15,12 +15,20 @@ A PyPSA-based energy system model for Guangdong Province, China, covering electr
 Requires Python 3.10+ and [uv](https://github.com/astral-sh/uv).
 
 ```bash
-# Clone repository
-git clone https://github.com/CandlelightDoener/guangdong-energy-model.git
+# Clone repository with submodules
+git clone --recurse-submodules https://github.com/CandlelightDoener/guangdong-energy-model.git
 cd guangdong-energy-model
 
 # Install dependencies
 uv sync
+```
+
+### Update Real Data
+
+The model uses real data from [PyPSA-China-PIK](https://github.com/pik-piam/PyPSA-China-PIK). To get the latest data:
+
+```bash
+git submodule update --remote
 ```
 
 ## Usage
@@ -66,28 +74,28 @@ visualize.create_summary_report(network, "output/")
 
 ## Model Data
 
-The model uses estimated data for Guangdong Province (2023):
+The model uses real data from [PyPSA-China-PIK](https://github.com/pik-piam/PyPSA-China-PIK) (Potsdam Institute for Climate Impact Research):
 
-| Component | Value |
-|-----------|-------|
-| Total installed capacity | 168 GW |
-| Peak load | 145 GW |
-| Annual electricity demand | 800 TWh |
-| Primary energy consumption | 9,580 PJ |
+| Component | Value | Source |
+|-----------|-------|--------|
+| Nuclear capacity | 16.1 GW | PyPSA-China-PIK |
+| Annual electricity demand (2025) | 912 TWh | PyPSA-China-PIK |
+| Peak load | 110.8 GW | Hourly load data |
+| Hourly load profile | 8760 hours | PyPSA-China-PIK |
 
 ### Generation Capacity (GW)
 
-| Source | Capacity |
-|--------|----------|
-| Coal | 65.0 |
-| Solar | 35.0 |
-| Gas | 25.0 |
-| Nuclear | 16.0 |
-| Hydro | 12.0 |
-| Wind | 12.0 |
-| Biomass | 3.0 |
+| Source | Capacity | Data Source |
+|--------|----------|-------------|
+| Coal | 65.0 | Estimated |
+| Solar | 35.0 | Estimated |
+| Gas | 25.0 | Estimated |
+| Nuclear | 16.1 | **Real data** |
+| Hydro | 12.0 | Estimated |
+| Wind | 12.0 | Estimated |
+| Biomass | 3.0 | Estimated |
 
-**Note**: These are placeholder values for demonstration. For production use, replace with verified data from official sources (China Statistical Yearbook, Guangdong Energy Administration).
+**Note**: Nuclear capacity and load data are from PyPSA-China-PIK. Other capacity values are estimates that can be updated as more data becomes available.
 
 ## Output
 
