@@ -270,9 +270,172 @@ def plot_load_profile(
     return fig
 
 
+def plot_monthly_generation(
+    monthly_gen: pd.DataFrame,
+    save_path: Path | None = None,
+) -> plt.Figure:
+    """
+    Plot monthly generation by carrier as stacked bar chart.
+
+    Args:
+        monthly_gen: DataFrame with monthly generation by carrier (from model.get_monthly_generation)
+        save_path: Optional path to save figure
+
+    Returns:
+        Matplotlib figure
+    """
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    # Reorder columns by total generation (baseload first)
+    col_order = monthly_gen.sum().sort_values(ascending=False).index.tolist()
+    monthly_gen = monthly_gen[col_order]
+
+    colors = [CARRIER_COLORS.get(c, "#999999") for c in monthly_gen.columns]
+
+    monthly_gen.plot.bar(
+        ax=ax,
+        stacked=True,
+        color=colors,
+        edgecolor="white",
+        linewidth=0.5,
+    )
+
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Generation (TWh)")
+    ax.set_title("Guangdong Province - Monthly Generation by Source")
+    ax.legend(title="Source", bbox_to_anchor=(1.02, 1), loc="upper left")
+    ax.grid(True, alpha=0.3, axis="y")
+
+    # Rotate x labels
+    plt.xticks(rotation=0)
+
+    plt.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    return fig
+
+
+def plot_monthly_energy_mix(
+    monthly_gen: pd.DataFrame,
+    save_path: Path | None = None,
+) -> plt.Figure:
+    """
+    Plot monthly energy mix as percentage stacked area chart.
+
+    Args:
+        monthly_gen: DataFrame with monthly generation by carrier
+        save_path: Optional path to save figure
+
+    Returns:
+        Matplotlib figure
+    """
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    # Calculate percentages
+    monthly_pct = monthly_gen.div(monthly_gen.sum(axis=1), axis=0) * 100
+
+    # Reorder columns
+    col_order = monthly_gen.sum().sort_values(ascending=False).index.tolist()
+    monthly_pct = monthly_pct[col_order]
+
+    colors = [CARRIER_COLORS.get(c, "#999999") for c in monthly_pct.columns]
+
+    monthly_pct.plot.area(
+        ax=ax,
+        stacked=True,
+        color=colors,
+        alpha=0.8,
+        linewidth=0,
+    )
+
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Share (%)")
+    ax.set_ylim(0, 100)
+    ax.set_title("Guangdong Province - Monthly Energy Mix (%)")
+    ax.legend(title="Source", bbox_to_anchor=(1.02, 1), loc="upper left")
+    ax.grid(True, alpha=0.3, axis="y")
+
+    plt.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    return fig
+
+
+def plot_yearly_summary(
+    yearly_stats: dict,
+    save_path: Path | None = None,
+) -> plt.Figure:
+    """
+    Plot yearly summary with generation mix pie and key statistics.
+
+    Args:
+        yearly_stats: Dictionary from model.get_yearly_statistics()
+        save_path: Optional path to save figure
+
+    Returns:
+        Matplotlib figure
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Pie chart of generation mix
+    gen_mix = yearly_stats.get("generation_mix_pct", {})
+    if gen_mix:
+        labels = list(gen_mix.keys())
+        sizes = list(gen_mix.values())
+        colors = [CARRIER_COLORS.get(c, "#999999") for c in labels]
+
+        axes[0].pie(
+            sizes,
+            labels=labels,
+            colors=colors,
+            autopct="%1.1f%%",
+            startangle=90,
+        )
+        axes[0].set_title("Annual Generation Mix")
+
+    # Key statistics as text
+    stats_text = f"""
+    YEARLY STATISTICS
+    {"="*30}
+
+    Generation: {yearly_stats.get('total_generation_twh', 0):.1f} TWh
+    Demand:     {yearly_stats.get('total_demand_twh', 0):.1f} TWh
+
+    Peak Load:  {yearly_stats.get('peak_demand_gw', 0):.1f} GW
+    Min Load:   {yearly_stats.get('min_demand_gw', 0):.1f} GW
+
+    CO₂ Emissions: {yearly_stats.get('total_co2_mt', 0):.1f} Mt
+    CO₂ Intensity: {yearly_stats.get('co2_intensity_kg_mwh', 0):.0f} kg/MWh
+
+    CAPACITY FACTORS
+    {"="*30}
+    """
+    cf = yearly_stats.get("capacity_factors", {})
+    for carrier, factor in sorted(cf.items(), key=lambda x: -x[1]):
+        stats_text += f"\n    {carrier:15s}: {factor*100:5.1f}%"
+
+    axes[1].text(0.1, 0.9, stats_text, transform=axes[1].transAxes,
+                 fontsize=11, verticalalignment="top", fontfamily="monospace")
+    axes[1].axis("off")
+    axes[1].set_title("Key Statistics")
+
+    plt.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    return fig
+
+
 def create_summary_report(
     network: pypsa.Network,
     output_dir: Path,
+    yearly_stats: dict | None = None,
+    monthly_gen: pd.DataFrame | None = None,
 ) -> None:
     """
     Create a comprehensive summary report with all visualizations.
@@ -280,11 +443,13 @@ def create_summary_report(
     Args:
         network: Solved PyPSA network
         output_dir: Directory to save report files
+        yearly_stats: Optional yearly statistics from model.get_yearly_statistics()
+        monthly_gen: Optional monthly generation from model.get_monthly_generation()
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate all plots
+    # Generate basic plots
     plot_load_profile(network, output_dir / "load_profile.png")
     plot_capacity_vs_generation(network, output_dir / "capacity_generation.png")
 
@@ -294,5 +459,13 @@ def create_summary_report(
 
     if not network.storage_units_t.p.empty:
         plot_storage_operation(network, output_dir / "storage_operation.png")
+
+    # Generate yearly/monthly plots if data provided
+    if yearly_stats:
+        plot_yearly_summary(yearly_stats, output_dir / "yearly_summary.png")
+
+    if monthly_gen is not None and not monthly_gen.empty:
+        plot_monthly_generation(monthly_gen, output_dir / "monthly_generation.png")
+        plot_monthly_energy_mix(monthly_gen, output_dir / "monthly_energy_mix.png")
 
     print(f"Report saved to {output_dir}")

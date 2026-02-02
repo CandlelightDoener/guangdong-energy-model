@@ -20,14 +20,16 @@ def create_network(
     snapshots: int = 24,
     multi_region: bool = False,
     include_storage: bool = True,
+    start_date: str = "2023-01-01",
 ) -> pypsa.Network:
     """
     Create a PyPSA network for Guangdong Province.
 
     Args:
-        snapshots: Number of time steps (default 24 for hourly day)
+        snapshots: Number of time steps (default 24 for hourly day, 8760 for full year)
         multi_region: If True, create multi-node regional model
         include_storage: If True, include battery and pumped hydro storage
+        start_date: Start date for simulation (default: 2023-01-01)
 
     Returns:
         Configured PyPSA Network
@@ -35,8 +37,8 @@ def create_network(
     network = pypsa.Network()
     network.name = "Guangdong Province Energy System"
 
-    # Set snapshots (hourly for one day as example)
-    network.set_snapshots(pd.date_range("2023-07-15", periods=snapshots, freq="h"))
+    # Set snapshots
+    network.set_snapshots(pd.date_range(start_date, periods=snapshots, freq="h"))
 
     if multi_region:
         _add_regional_buses(network)
@@ -316,3 +318,129 @@ def get_cost_summary(network: pypsa.Network) -> dict:
             network.objective / network.loads_t.p_set.sum().sum(), 2
         ),
     }
+
+
+def get_yearly_statistics(network: pypsa.Network) -> dict:
+    """
+    Get comprehensive yearly statistics from a solved network.
+
+    Args:
+        network: Solved PyPSA network (ideally with 8760 snapshots)
+
+    Returns:
+        Dictionary with yearly statistics
+    """
+    if network.generators_t.p.empty:
+        return {}
+
+    hours = len(network.snapshots)
+    scale_to_year = 8760 / hours  # Scale factor if not full year
+
+    # Generation by carrier
+    gen_by_carrier = network.generators_t.p.T.groupby(
+        network.generators.carrier
+    ).sum().T
+
+    total_generation = gen_by_carrier.sum().sum() * scale_to_year
+    total_demand = network.loads_t.p_set.sum().sum() * scale_to_year
+
+    # Capacity factors
+    capacity_factors = {}
+    for carrier in gen_by_carrier.columns:
+        carrier_gen = gen_by_carrier[carrier].sum()
+        carrier_cap = network.generators[
+            network.generators.carrier == carrier
+        ].p_nom.sum()
+        if carrier_cap > 0:
+            capacity_factors[carrier] = carrier_gen / (carrier_cap * hours)
+
+    # Generation mix (percentages)
+    gen_mix = {}
+    total_gen = gen_by_carrier.sum().sum()
+    for carrier in gen_by_carrier.columns:
+        gen_mix[carrier] = gen_by_carrier[carrier].sum() / total_gen * 100
+
+    # Emissions
+    total_emissions = 0
+    for carrier in gen_by_carrier.columns:
+        if carrier in data.CO2_EMISSIONS_T_MWH:
+            emissions = gen_by_carrier[carrier].sum() * data.CO2_EMISSIONS_T_MWH[carrier]
+            total_emissions += emissions
+    total_emissions *= scale_to_year
+
+    return {
+        "hours_simulated": hours,
+        "total_generation_twh": round(total_generation / 1e6, 2),
+        "total_demand_twh": round(total_demand / 1e6, 2),
+        "peak_demand_gw": round(network.loads_t.p_set.sum(axis=1).max() / 1000, 2),
+        "min_demand_gw": round(network.loads_t.p_set.sum(axis=1).min() / 1000, 2),
+        "generation_mix_pct": gen_mix,
+        "capacity_factors": capacity_factors,
+        "total_co2_mt": round(total_emissions / 1e6, 2),
+        "co2_intensity_kg_mwh": round(total_emissions * 1000 / total_generation, 1),
+    }
+
+
+def get_monthly_generation(network: pypsa.Network) -> pd.DataFrame:
+    """
+    Get monthly generation breakdown by carrier.
+
+    Args:
+        network: Solved PyPSA network
+
+    Returns:
+        DataFrame with monthly generation by carrier (TWh)
+    """
+    if network.generators_t.p.empty:
+        return pd.DataFrame()
+
+    # Group generation by carrier
+    gen_by_carrier = network.generators_t.p.T.groupby(
+        network.generators.carrier
+    ).sum().T
+
+    # Add month column based on index
+    gen_by_carrier.index = network.snapshots
+    monthly = gen_by_carrier.groupby(gen_by_carrier.index.month).sum()
+    monthly.index.name = "Month"
+
+    # Convert MWh to TWh
+    monthly = monthly / 1e6
+
+    # Add month names
+    month_names = {
+        1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr",
+        5: "May", 6: "Jun", 7: "Jul", 8: "Aug",
+        9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"
+    }
+    monthly.index = monthly.index.map(month_names)
+
+    return monthly.round(3)
+
+
+def get_monthly_demand(network: pypsa.Network) -> pd.Series:
+    """
+    Get monthly electricity demand.
+
+    Args:
+        network: PyPSA network
+
+    Returns:
+        Series with monthly demand (TWh)
+    """
+    total_load = network.loads_t.p_set.sum(axis=1)
+    total_load.index = network.snapshots
+    monthly = total_load.groupby(total_load.index.month).sum()
+    monthly.index.name = "Month"
+
+    # Convert MWh to TWh
+    monthly = monthly / 1e6
+
+    month_names = {
+        1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr",
+        5: "May", 6: "Jun", 7: "Jul", 8: "Aug",
+        9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"
+    }
+    monthly.index = monthly.index.map(month_names)
+
+    return monthly.round(3)
