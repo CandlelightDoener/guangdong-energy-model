@@ -1,0 +1,3 @@
+[submodule "external/pypsa-china"]
+	path = external/pypsa-china
+	url = https://github.com/pik-piam/PyPSA-China-PIK.git

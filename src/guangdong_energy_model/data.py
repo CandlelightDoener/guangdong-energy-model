@@ -1,25 +1,62 @@
 """
 Energy data for Guangdong Province, China.
 
-Data sources (estimated/placeholder values based on public statistics):
-- China Statistical Yearbook
-- Guangdong Provincial Statistics
-- National Energy Administration reports
+Real data is loaded from PyPSA-China-PIK when available.
+Fallback to estimated values if submodule not initialized.
 
-Note: These are approximate values for demonstration purposes.
-Actual modeling should use verified data from official sources.
+To get real data:
+    git submodule update --init --recursive
+
+To update data:
+    git submodule update --remote
 """
 
-# Guangdong Province Key Statistics (2023 estimates)
-# Population: ~127 million
-# GDP: ~13.5 trillion CNY
-# Total electricity consumption: ~800 TWh/year
+import logging
 
-# Installed capacity in GW (estimated 2023)
+logger = logging.getLogger(__name__)
+
+# Try to load real data from PyPSA-China-PIK
+_USE_REAL_DATA = False
+_REAL_DATA = {}
+
+try:
+    from . import data_loader
+    _REAL_DATA = data_loader.get_guangdong_summary()
+    _USE_REAL_DATA = True
+    logger.info("Using real data from PyPSA-China-PIK")
+except Exception as e:
+    logger.warning(f"PyPSA-China-PIK data not available: {e}")
+    logger.warning("Using placeholder data. Run: git submodule update --init --recursive")
+
+
+def is_using_real_data() -> bool:
+    """Check if real data from PyPSA-China-PIK is being used."""
+    return _USE_REAL_DATA
+
+
+def get_real_data_summary() -> dict:
+    """Get summary of loaded real data."""
+    return _REAL_DATA
+
+
+def _safe_get(key: str, default: float) -> float:
+    """Safely get numeric value from real data, with fallback."""
+    if not _USE_REAL_DATA:
+        return default
+    value = _REAL_DATA.get(key)
+    if value is None or isinstance(value, str):
+        return default
+    return float(value)
+
+
+# Installed capacity in GW
+# Nuclear capacity from real data if available (16.136 GW from PyPSA-China-PIK)
+_nuclear_gw = _safe_get("nuclear_capacity_mw", 16000) / 1000
+
 INSTALLED_CAPACITY_GW = {
     "coal": 65.0,        # Thermal coal plants
     "gas": 25.0,         # Natural gas (CCGT, peaker)
-    "nuclear": 16.0,     # Daya Bay, Yangjiang, Taishan, etc.
+    "nuclear": round(_nuclear_gw, 1),
     "hydro": 12.0,       # Including pumped hydro
     "solar": 35.0,       # Rapid growth in recent years
     "wind": 12.0,        # Offshore and onshore
@@ -84,17 +121,21 @@ PRIMARY_ENERGY_PJ = {
     "biomass": 200,
 }
 
-# Electricity consumption by sector (TWh/year, estimated 2023)
+# Electricity consumption by sector (TWh/year)
+# Total from real data: 912 TWh (2025), distributed by typical shares
+_total_demand_twh = _safe_get("annual_demand_2025_twh", 800)
+
 ELECTRICITY_DEMAND_TWH = {
-    "industrial": 520,
-    "commercial": 140,
-    "residential": 100,
-    "transport": 25,
-    "agriculture": 15,
+    "industrial": round(_total_demand_twh * 0.65),   # 65%
+    "commercial": round(_total_demand_twh * 0.175),  # 17.5%
+    "residential": round(_total_demand_twh * 0.125), # 12.5%
+    "transport": round(_total_demand_twh * 0.03),    # 3%
+    "agriculture": round(_total_demand_twh * 0.02),  # 2%
 }
 
-# Peak load in GW
-PEAK_LOAD_GW = 145.0
+# Peak load in GW (from real hourly data if available)
+_peak_mw = _safe_get("peak_demand_mw", 145000)
+PEAK_LOAD_GW = round(_peak_mw / 1000, 1)
 
 # Typical load profile factors (hourly, normalized)
 # Simplified 24-hour profile for a typical summer day
@@ -146,3 +187,32 @@ IMPORT_CAPACITY_GW = {
     "west_east_power": 50.0,  # From Yunnan, Guizhou (hydro)
     "hong_kong_link": 4.0,
 }
+
+
+def get_hourly_demand_profile(n_hours: int = 8760):
+    """
+    Get hourly demand profile in MW.
+
+    Uses real data from PyPSA-China-PIK if available,
+    otherwise generates synthetic profile from LOAD_PROFILE_SUMMER.
+
+    Args:
+        n_hours: Number of hours to return (default: full year)
+
+    Returns:
+        numpy array of hourly demand in MW
+    """
+    import numpy as np
+
+    if _USE_REAL_DATA:
+        try:
+            hourly = data_loader.load_hourly_demand()
+            return hourly.values[:n_hours]
+        except Exception as e:
+            logger.warning(f"Failed to load hourly data: {e}")
+
+    # Fallback: generate from simplified profile
+    profile = np.array(LOAD_PROFILE_SUMMER)
+    peak_mw = PEAK_LOAD_GW * 1000
+    full_year = np.tile(profile, 365)[:n_hours]
+    return full_year * peak_mw
