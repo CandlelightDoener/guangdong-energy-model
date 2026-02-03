@@ -8,19 +8,63 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+from . import data
+
 # Color scheme for energy carriers
 CARRIER_COLORS = {
     "coal": "#4a4a4a",
     "gas": "#ff9933",
+    "CCGT": "#ff9933",
+    "OCGT": "#ffbb66",
     "nuclear": "#ff66cc",
     "hydro": "#3399ff",
+    "PHS": "#6699ff",
     "solar": "#ffcc00",
     "wind": "#66cc66",
+    "onwind": "#66cc66",
+    "offwind": "#339966",
     "biomass": "#996633",
     "import_hydro": "#99ccff",
     "battery": "#9966ff",
     "pumped_hydro": "#6699ff",
 }
+
+
+def _source_label() -> str:
+    """Return a data source attribution string for plot annotations."""
+    parts = []
+    if data.is_using_gem_data():
+        parts.append("Capacity: Global Energy Monitor (GEM)")
+    else:
+        parts.append("Capacity: Placeholder estimates")
+    if data.is_using_real_data():
+        parts.append("Demand: PyPSA-China-PIK")
+    else:
+        parts.append("Demand: Placeholder estimates")
+    return "Data — " + " | " .join(parts)
+
+
+def _add_source(fig: plt.Figure) -> None:
+    """Add a small data-source footnote to the bottom of a figure."""
+    fig.text(
+        0.01, 0.005, _source_label(),
+        fontsize=7, color="#888888", style="italic",
+    )
+
+
+def _sim_period(network: pypsa.Network) -> str:
+    """Return a human-readable string describing the simulation time span."""
+    s = network.snapshots
+    t0, t1 = s[0], s[-1]
+    n = len(s)
+    if n >= 8760:
+        return f"full year, {t0:%Y}"
+    elif n >= 720:
+        return f"{t0:%b %Y} – {t1:%b %Y}"
+    elif n > 24:
+        return f"{t0:%Y-%m-%d} – {t1:%Y-%m-%d} ({n} h)"
+    else:
+        return f"{t0:%Y-%m-%d} ({n} h)"
 
 
 def plot_generation_dispatch(
@@ -46,8 +90,9 @@ def plot_generation_dispatch(
     ).sum().T
 
     # Sort by baseload to peak
-    merit_order = ["nuclear", "import_hydro", "hydro", "solar", "wind",
-                   "biomass", "coal", "gas"]
+    merit_order = ["nuclear", "import_hydro", "hydro", "PHS", "solar",
+                   "wind", "onwind", "offwind", "biomass", "coal",
+                   "gas", "CCGT", "OCGT"]
     cols = [c for c in merit_order if c in gen_by_carrier.columns]
     gen_by_carrier = gen_by_carrier[cols]
 
@@ -62,11 +107,12 @@ def plot_generation_dispatch(
 
     ax.set_xlabel("Time")
     ax.set_ylabel("Power (MW)")
-    ax.set_title("Guangdong Province - Generation Dispatch")
+    ax.set_title(f"Guangdong Province — Generation Dispatch ({_sim_period(network)})")
     ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1))
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
+    _add_source(fig)
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -111,7 +157,8 @@ def plot_generation_mix(
         explode=[0.02] * len(gen_by_carrier),
     )
 
-    ax.set_title("Guangdong Province - Generation Mix")
+    ax.set_title(f"Guangdong Province — Generation Mix ({_sim_period(network)})")
+    _add_source(fig)
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -149,9 +196,10 @@ def plot_capacity_vs_generation(
     # Capacity bar chart
     colors = [CARRIER_COLORS.get(c, "#999999") for c in capacity.index]
     capacity.plot.bar(ax=axes[0], color=colors, edgecolor="black")
+    period = _sim_period(network)
     axes[0].set_xlabel("Carrier")
     axes[0].set_ylabel("Installed Capacity (GW)")
-    axes[0].set_title("Installed Capacity by Source")
+    axes[0].set_title("Guangdong — Installed Capacity by Source")
     axes[0].tick_params(axis="x", rotation=45)
 
     # Generation bar chart
@@ -160,14 +208,15 @@ def plot_capacity_vs_generation(
         generation.plot.bar(ax=axes[1], color=colors, edgecolor="black")
         axes[1].set_xlabel("Carrier")
         axes[1].set_ylabel("Generation (GWh)")
-        axes[1].set_title("Generation by Source (Simulation Period)")
+        axes[1].set_title(f"Guangdong — Generation by Source ({period})")
         axes[1].tick_params(axis="x", rotation=45)
     else:
         axes[1].text(0.5, 0.5, "Run optimization first",
                      ha="center", va="center", transform=axes[1].transAxes)
-        axes[1].set_title("Generation by Source")
+        axes[1].set_title("Guangdong — Generation by Source")
 
     plt.tight_layout()
+    _add_source(fig)
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -203,7 +252,7 @@ def plot_storage_operation(
     storage_p.plot(ax=axes[0], color=colors, linewidth=2)
     axes[0].axhline(0, color="black", linestyle="-", linewidth=0.5)
     axes[0].set_ylabel("Power (MW)\n(+discharge / -charge)")
-    axes[0].set_title("Storage Operation")
+    axes[0].set_title(f"Guangdong — Storage Operation ({_sim_period(network)})")
     axes[0].legend(loc="upper right")
     axes[0].grid(True, alpha=0.3)
 
@@ -217,6 +266,7 @@ def plot_storage_operation(
         axes[1].grid(True, alpha=0.3)
 
     plt.tight_layout()
+    _add_source(fig)
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -247,7 +297,7 @@ def plot_load_profile(
 
     ax.set_xlabel("Time")
     ax.set_ylabel("Load (MW)")
-    ax.set_title("Guangdong Province - Electricity Demand Profile")
+    ax.set_title(f"Guangdong Province — Electricity Demand ({_sim_period(network)})")
     ax.grid(True, alpha=0.3)
 
     # Add peak annotation
@@ -263,6 +313,7 @@ def plot_load_profile(
     )
 
     plt.tight_layout()
+    _add_source(fig)
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -302,7 +353,7 @@ def plot_monthly_generation(
 
     ax.set_xlabel("Month")
     ax.set_ylabel("Generation (TWh)")
-    ax.set_title("Guangdong Province - Monthly Generation by Source")
+    ax.set_title("Guangdong Province — Monthly Generation by Source")
     ax.legend(title="Source", bbox_to_anchor=(1.02, 1), loc="upper left")
     ax.grid(True, alpha=0.3, axis="y")
 
@@ -310,6 +361,7 @@ def plot_monthly_generation(
     plt.xticks(rotation=0)
 
     plt.tight_layout()
+    _add_source(fig)
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -353,11 +405,12 @@ def plot_monthly_energy_mix(
     ax.set_xlabel("Month")
     ax.set_ylabel("Share (%)")
     ax.set_ylim(0, 100)
-    ax.set_title("Guangdong Province - Monthly Energy Mix (%)")
+    ax.set_title("Guangdong Province — Monthly Energy Mix (%)")
     ax.legend(title="Source", bbox_to_anchor=(1.02, 1), loc="upper left")
     ax.grid(True, alpha=0.3, axis="y")
 
     plt.tight_layout()
+    _add_source(fig)
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -395,11 +448,11 @@ def plot_yearly_summary(
             autopct="%1.1f%%",
             startangle=90,
         )
-        axes[0].set_title("Annual Generation Mix")
+        axes[0].set_title("Guangdong — Annual Generation Mix")
 
     # Key statistics as text
     stats_text = f"""
-    YEARLY STATISTICS
+    GUANGDONG — YEARLY STATISTICS
     {"="*30}
 
     Generation: {yearly_stats.get('total_generation_twh', 0):.1f} TWh
@@ -424,6 +477,7 @@ def plot_yearly_summary(
     axes[1].set_title("Key Statistics")
 
     plt.tight_layout()
+    _add_source(fig)
 
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches="tight")
