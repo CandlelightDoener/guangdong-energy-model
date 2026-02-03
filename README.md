@@ -23,9 +23,22 @@ cd guangdong-energy-model
 uv sync
 ```
 
-### Update Real Data
+### GEM Power Plant Data (Capacity)
 
-The model uses real data from [PyPSA-China-PIK](https://github.com/pik-piam/PyPSA-China-PIK). To get the latest data:
+The model uses real installed capacity data from the [Global Energy Monitor (GEM)](https://globalenergymonitor.org/projects/global-integrated-power-tracker/) Global Integrated Power Tracker.
+
+1. Download the Excel file from https://globalenergymonitor.org/projects/global-integrated-power-tracker/download-data/
+2. Save it in the `data/` directory (files matching `Global-Integrated-Power*.xlsx` are auto-detected)
+3. Or pass the path explicitly: `--gem-file path/to/file.xlsx`
+
+The GEM data file is **not included** in this repository. Users must download it themselves.
+
+> **Citation**: "Global Integrated Power Tracker, Global Energy Monitor, January 2026 release."
+> Copyright Global Energy Monitor. Licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+### PyPSA-China-PIK Data (Demand)
+
+Demand and load profile data comes from [PyPSA-China-PIK](https://github.com/pik-piam/PyPSA-China-PIK). To get the latest data:
 
 ```bash
 git submodule update --remote
@@ -36,8 +49,14 @@ git submodule update --remote
 ### Command Line
 
 ```bash
-# Run default model (24h simulation)
+# Run default model (24h simulation, auto-detects GEM data in data/)
 uv run guangdong-model
+
+# Explicit GEM data file
+uv run guangdong-model --gem-file data/Global-Integrated-Power-January-2026.xlsx
+
+# Full year with GEM data
+uv run guangdong-model --full-year --gem-file data/Global-Integrated-Power-January-2026.xlsx
 
 # Multi-region model with transmission
 uv run guangdong-model --multi-region
@@ -83,19 +102,22 @@ The model uses real data from [PyPSA-China-PIK](https://github.com/pik-piam/PyPS
 | Peak load | 110.8 GW | Hourly load data |
 | Hourly load profile | 8760 hours | PyPSA-China-PIK |
 
-### Generation Capacity (GW)
+### Generation Capacity (GW) — with GEM data
 
 | Source | Capacity | Data Source |
 |--------|----------|-------------|
-| Coal | 65.0 | Estimated |
-| Solar | 35.0 | Estimated |
-| Gas | 25.0 | Estimated |
-| Nuclear | 16.1 | **Real data** |
-| Hydro | 12.0 | Estimated |
-| Wind | 12.0 | Estimated |
-| Biomass | 3.0 | Estimated |
+| Coal | 71.4 | **GEM** |
+| CCGT | 57.4 | **GEM** |
+| Solar | 16.6 | **GEM** |
+| Nuclear | 16.2 | **GEM** |
+| Pumped Hydro (PHS) | 10.9 | **GEM** |
+| Offshore Wind | 10.1 | **GEM** |
+| Onshore Wind | 5.2 | **GEM** |
+| Biomass | 4.3 | **GEM** |
+| Hydro (conventional) | 1.8 | **GEM** |
+| OCGT | 1.1 | **GEM** |
 
-**Note**: Nuclear capacity and load data are from PyPSA-China-PIK. Other capacity values are estimates that can be updated as more data becomes available.
+Data from [Global Energy Monitor](https://globalenergymonitor.org/) Global Integrated Power Tracker (January 2026 release). Without GEM data, the model falls back to rough estimates.
 
 ## Output
 

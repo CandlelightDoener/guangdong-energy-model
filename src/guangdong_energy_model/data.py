@@ -1,21 +1,21 @@
 """
 Energy data for Guangdong Province, China.
 
-Real data is loaded from PyPSA-China-PIK when available.
-Fallback to estimated values if submodule not initialized.
+Capacity data is loaded from the Global Energy Monitor (GEM) Global Integrated
+Power Tracker when available.  Demand/load data comes from PyPSA-China-PIK.
+Falls back to estimated values when data files are not present.
 
-To get real data:
-    git submodule update --init --recursive
-
-To update data:
-    git submodule update --remote
+GEM data: download from https://globalenergymonitor.org/projects/global-integrated-power-tracker/download-data/
+PyPSA-China-PIK: git submodule update --init --recursive
 """
 
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Try to load real data from PyPSA-China-PIK
+# --- PyPSA-China-PIK demand data -------------------------------------------
+
 _USE_REAL_DATA = False
 _REAL_DATA = {}
 
@@ -28,10 +28,68 @@ except Exception as e:
     logger.warning(f"PyPSA-China-PIK data not available: {e}")
     logger.warning("Using placeholder data. Run: git submodule update --init --recursive")
 
+# --- GEM capacity data -----------------------------------------------------
+
+_GEM_CAPACITIES: dict[str, float] | None = None  # populated by load_gem_data()
+
+
+def load_gem_data(gem_path: Path | None = None) -> None:
+    """Load GEM capacity data.  Called from main() or manually.
+
+    Args:
+        gem_path: Explicit path to GEM Excel file, or None to auto-detect.
+    """
+    global _GEM_CAPACITIES
+    from . import gem_loader
+
+    caps = gem_loader.load_gem_capacities(gem_path)
+    if caps:
+        _GEM_CAPACITIES = caps
+        _apply_gem_capacities()
+        logger.info("Installed capacities updated from GEM data")
+    else:
+        logger.info("GEM data not available — using fallback estimates")
+
+
+def _apply_gem_capacities() -> None:
+    """Overwrite INSTALLED_CAPACITY_GW with GEM values where available."""
+    if _GEM_CAPACITIES is None:
+        return
+
+    gem = _GEM_CAPACITIES
+
+    # Map GEM carriers to the keys used in INSTALLED_CAPACITY_GW.
+    # GEM distinguishes CCGT/OCGT and onwind/offwind; we aggregate to the
+    # broader categories used by the rest of the model.
+    INSTALLED_CAPACITY_GW["coal"] = round(gem.get("coal", 0.0), 1)
+    INSTALLED_CAPACITY_GW["CCGT"] = round(gem.get("CCGT", 0.0), 1)
+    INSTALLED_CAPACITY_GW["OCGT"] = round(gem.get("OCGT", 0.0), 1)
+    INSTALLED_CAPACITY_GW["nuclear"] = round(gem.get("nuclear", 0.0), 1)
+    INSTALLED_CAPACITY_GW["hydro"] = round(gem.get("hydro", 0.0), 1)
+    INSTALLED_CAPACITY_GW["PHS"] = round(gem.get("PHS", 0.0), 1)
+    INSTALLED_CAPACITY_GW["solar"] = round(gem.get("solar", 0.0), 1)
+    INSTALLED_CAPACITY_GW["onwind"] = round(gem.get("onwind", 0.0), 1)
+    INSTALLED_CAPACITY_GW["offwind"] = round(gem.get("offwind", 0.0), 1)
+    INSTALLED_CAPACITY_GW["biomass"] = round(gem.get("biomass", 0.0), 1)
+
+    # Remove the old aggregated keys that are now split
+    INSTALLED_CAPACITY_GW.pop("gas", None)
+    INSTALLED_CAPACITY_GW.pop("wind", None)
+
 
 def is_using_real_data() -> bool:
     """Check if real data from PyPSA-China-PIK is being used."""
     return _USE_REAL_DATA
+
+
+def is_using_gem_data() -> bool:
+    """Check if GEM capacity data has been loaded."""
+    return _GEM_CAPACITIES is not None
+
+
+def get_gem_capacities() -> dict[str, float] | None:
+    """Return the raw GEM capacity dict (GW), or None."""
+    return _GEM_CAPACITIES
 
 
 def get_real_data_summary() -> dict:
@@ -49,17 +107,18 @@ def _safe_get(key: str, default: float) -> float:
     return float(value)
 
 
-# Installed capacity in GW
-# Nuclear capacity from real data if available (16.136 GW from PyPSA-China-PIK)
+# --- Installed capacity (GW) -----------------------------------------------
+# Defaults are estimates; overwritten by _apply_gem_capacities() when GEM is loaded.
+
 _nuclear_gw = _safe_get("nuclear_capacity_mw", 16000) / 1000
 
-INSTALLED_CAPACITY_GW = {
+INSTALLED_CAPACITY_GW: dict[str, float] = {
     "coal": 65.0,        # Thermal coal plants
-    "gas": 25.0,         # Natural gas (CCGT, peaker)
+    "gas": 25.0,         # Natural gas (CCGT + OCGT combined)
     "nuclear": round(_nuclear_gw, 1),
-    "hydro": 12.0,       # Including pumped hydro
+    "hydro": 12.0,       # Conventional hydro
     "solar": 35.0,       # Rapid growth in recent years
-    "wind": 12.0,        # Offshore and onshore
+    "wind": 12.0,        # Offshore and onshore combined
     "biomass": 3.0,      # Waste-to-energy, agricultural
 }
 
@@ -67,10 +126,15 @@ INSTALLED_CAPACITY_GW = {
 CAPACITY_FACTORS = {
     "coal": 0.55,
     "gas": 0.35,
+    "CCGT": 0.40,
+    "OCGT": 0.15,
     "nuclear": 0.85,
     "hydro": 0.35,
+    "PHS": 0.20,
     "solar": 0.14,
     "wind": 0.22,
+    "onwind": 0.20,
+    "offwind": 0.28,
     "biomass": 0.60,
 }
 
@@ -78,10 +142,15 @@ CAPACITY_FACTORS = {
 MARGINAL_COSTS_CNY = {
     "coal": 350,
     "gas": 550,
+    "CCGT": 500,
+    "OCGT": 650,
     "nuclear": 50,
     "hydro": 20,
+    "PHS": 15,
     "solar": 0,
     "wind": 0,
+    "onwind": 0,
+    "offwind": 0,
     "biomass": 200,
 }
 
@@ -102,10 +171,15 @@ CAPITAL_COSTS_CNY_KW = {
 CO2_EMISSIONS_T_MWH = {
     "coal": 0.85,
     "gas": 0.40,
+    "CCGT": 0.37,
+    "OCGT": 0.50,
     "nuclear": 0.0,
     "hydro": 0.0,
+    "PHS": 0.0,
     "solar": 0.0,
     "wind": 0.0,
+    "onwind": 0.0,
+    "offwind": 0.0,
     "biomass": 0.0,  # Considered carbon-neutral
 }
 

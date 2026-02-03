@@ -13,6 +13,10 @@ wheels/
 output/
 *.nc
 
+# Data files (downloaded separately, not redistributed)
+data/*.xlsx
+data/*.csv
+
 # OS files
 .DS_Store
 

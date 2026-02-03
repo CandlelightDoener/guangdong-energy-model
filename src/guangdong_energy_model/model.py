@@ -107,7 +107,7 @@ def _add_generators(network: pypsa.Network, multi_region: bool) -> None:
                 f"{gen_type}_plant",
                 bus=bus,
                 p_nom=capacity_gw * 1000,  # GW to MW
-                marginal_cost=data.MARGINAL_COSTS_CNY[gen_type],
+                marginal_cost=data.MARGINAL_COSTS_CNY.get(gen_type, 0),
                 carrier=gen_type,
                 p_max_pu=p_max_pu,
             )
@@ -115,23 +115,34 @@ def _add_generators(network: pypsa.Network, multi_region: bool) -> None:
 
 def _add_regional_generators(network: pypsa.Network) -> None:
     """Add generators distributed across regions."""
-    # Regional distribution of generation capacity
+    # Regional distribution of generation capacity.
+    # Shares are defined for every carrier that *may* appear in
+    # INSTALLED_CAPACITY_GW (both the legacy aggregated keys and the
+    # split GEM keys).  Missing carriers are silently skipped.
     regional_shares = {
         "pearl_river_delta": {
-            "coal": 0.40, "gas": 0.70, "nuclear": 0.60,
-            "solar": 0.50, "wind": 0.30, "hydro": 0.10, "biomass": 0.50,
+            "coal": 0.40, "gas": 0.70, "CCGT": 0.70, "OCGT": 0.70,
+            "nuclear": 0.60, "solar": 0.50,
+            "wind": 0.30, "onwind": 0.30, "offwind": 0.30,
+            "hydro": 0.10, "PHS": 0.10, "biomass": 0.50,
         },
         "east_guangdong": {
-            "coal": 0.20, "gas": 0.10, "nuclear": 0.20,
-            "solar": 0.15, "wind": 0.25, "hydro": 0.10, "biomass": 0.15,
+            "coal": 0.20, "gas": 0.10, "CCGT": 0.10, "OCGT": 0.10,
+            "nuclear": 0.20, "solar": 0.15,
+            "wind": 0.25, "onwind": 0.25, "offwind": 0.25,
+            "hydro": 0.10, "PHS": 0.10, "biomass": 0.15,
         },
         "west_guangdong": {
-            "coal": 0.25, "gas": 0.15, "nuclear": 0.20,
-            "solar": 0.20, "wind": 0.35, "hydro": 0.20, "biomass": 0.20,
+            "coal": 0.25, "gas": 0.15, "CCGT": 0.15, "OCGT": 0.15,
+            "nuclear": 0.20, "solar": 0.20,
+            "wind": 0.35, "onwind": 0.35, "offwind": 0.35,
+            "hydro": 0.20, "PHS": 0.20, "biomass": 0.20,
         },
         "north_guangdong": {
-            "coal": 0.15, "gas": 0.05, "nuclear": 0.00,
-            "solar": 0.15, "wind": 0.10, "hydro": 0.60, "biomass": 0.15,
+            "coal": 0.15, "gas": 0.05, "CCGT": 0.05, "OCGT": 0.05,
+            "nuclear": 0.00, "solar": 0.15,
+            "wind": 0.10, "onwind": 0.10, "offwind": 0.10,
+            "hydro": 0.60, "PHS": 0.60, "biomass": 0.15,
         },
     }
 
@@ -140,25 +151,26 @@ def _add_regional_generators(network: pypsa.Network) -> None:
     for region, shares in regional_shares.items():
         bus = f"{region}_elec"
         for gen_type, share in shares.items():
-            if share > 0:
-                capacity = data.INSTALLED_CAPACITY_GW[gen_type] * share * 1000
-                p_max_pu = _get_availability_profile(gen_type, n_snapshots)
-                network.add(
-                    "Generator",
-                    f"{region}_{gen_type}",
-                    bus=bus,
-                    p_nom=capacity,
-                    marginal_cost=data.MARGINAL_COSTS_CNY[gen_type],
-                    carrier=gen_type,
-                    p_max_pu=p_max_pu,
-                )
+            if share <= 0 or gen_type not in data.INSTALLED_CAPACITY_GW:
+                continue
+            capacity = data.INSTALLED_CAPACITY_GW[gen_type] * share * 1000
+            p_max_pu = _get_availability_profile(gen_type, n_snapshots)
+            network.add(
+                "Generator",
+                f"{region}_{gen_type}",
+                bus=bus,
+                p_nom=capacity,
+                marginal_cost=data.MARGINAL_COSTS_CNY.get(gen_type, 0),
+                carrier=gen_type,
+                p_max_pu=p_max_pu,
+            )
 
 
 def _get_availability_profile(gen_type: str, n_snapshots: int) -> np.ndarray:
     """Get hourly availability profile for generator type."""
     if gen_type == "solar":
         profile = np.array(data.SOLAR_PROFILE)
-    elif gen_type == "wind":
+    elif gen_type in ("wind", "onwind", "offwind"):
         profile = np.array(data.WIND_PROFILE)
     else:
         # Dispatchable generators - full availability

@@ -65,19 +65,34 @@ def main():
         action="store_true",
         help="Export network to NetCDF file",
     )
+    parser.add_argument(
+        "--gem-file",
+        type=Path,
+        default=None,
+        help="Path to GEM Global Integrated Power Tracker Excel file",
+    )
 
     args = parser.parse_args()
+
+    # Load GEM capacity data (auto-detect or explicit path)
+    data.load_gem_data(args.gem_file)
 
     print("=" * 60)
     print("Guangdong Province Energy System Model")
     print("=" * 60)
 
     # Show data source
-    if data.is_using_real_data():
-        print("\nData source: PyPSA-China-PIK (real data)")
+    if data.is_using_gem_data():
+        print("\nCapacity data: Global Energy Monitor (GEM)")
     else:
-        print("\nData source: Placeholder data")
-        print("  Run 'git submodule update --init' for real data")
+        print("\nCapacity data: Placeholder estimates")
+        print("  Use --gem-file or place GEM Excel in data/ for real data")
+
+    if data.is_using_real_data():
+        print("Demand data:   PyPSA-China-PIK (real data)")
+    else:
+        print("Demand data:   Placeholder estimates")
+        print("  Run 'git submodule update --init' for real demand data")
 
     # Determine number of snapshots
     snapshots = 8760 if args.full_year else args.snapshots
